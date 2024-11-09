@@ -4,10 +4,10 @@
       <home-manager/nixos>
     ];
 
-  # Permitir paquetes unfree (necesario para NVIDIA)
+  # Permitir paquetes unfree
   nixpkgs.config.allowUnfree = true;
 
-  # Configuración de Hardware y NVIDIA
+  # Hardware optimizado
   hardware = {
     enableAllFirmware = true;
     opengl = {
@@ -18,28 +18,34 @@
     nvidia = {
       package = config.boot.kernelPackages.nvidiaPackages.stable;
       modesetting.enable = true;
-      powerManagement.enable = false;  # Desactivado por seguridad inicialmente
       open = false;
       nvidiaSettings = true;
+      forceFullCompositionPipeline = true;  # Mejora tearing
     };
     pulseaudio = {
       enable = true;
       support32Bit = true;
       package = pkgs.pulseaudioFull;
-      extraConfig = ''
-        load-module module-alsa-sink device=hw:0,0
-        load-module module-alsa-source device=hw:0,0
-      '';
+      daemon.config = {
+        default-sample-rate = 48000;
+        alternate-sample-rate = 44100;
+        default-sample-format = "float32le";
+        default-fragments = 2;
+        default-fragment-size-msec = 125;
+      };
     };
   };
 
-  # Variables de entorno básicas para NVIDIA
+  # Variables de entorno optimizadas
   environment.sessionVariables = {
     LIBVA_DRIVER_NAME = "nvidia";
     __GLX_VENDOR_LIBRARY_NAME = "nvidia";
+    __GL_SYNC_TO_VBLANK = "1";
+    __GL_GSYNC_ALLOWED = "1";
+    __GL_VRR_ALLOWED = "1";
   };
 
-  # Bootloader
+  # Boot optimizado
   boot = {
     loader = {
       grub = {
@@ -50,12 +56,14 @@
       };
     };
     kernel.sysctl = {
+      "vm.swappiness" = 10;                # Mejor para SSD
+      "vm.vfs_cache_pressure" = 50;        # Mejor para SSD
       "fs.inotify.max_user_watches" = 524288;
       "vm.max_map_count" = 262144;
     };
   };
 
-  # Networking
+  # Networking básico
   networking = {
     hostName = "soxin";
     networkmanager.enable = true;
@@ -89,13 +97,19 @@
   users.users.passh = {
     isNormalUser = true;
     description = "passh";
-    extraGroups = [ "wheel" "networkmanager" "audio" "video" "docker" ];
+    extraGroups = [
+      "wheel"
+      "networkmanager"
+      "audio"
+      "video"
+      "docker"
+      "input"
+    ];
     shell = pkgs.bash;
   };
 
-  # Servicios
+  # Servicios básicos optimizados
   services = {
-    # X11 y XMonad con soporte NVIDIA básico
     xserver = {
       enable = true;
       videoDrivers = [ "nvidia" ];
@@ -115,7 +129,8 @@
 
       displayManager = {
         setupCommands = ''
-          ${pkgs.xorg.xrandr}/bin/xrandr --output DP-0 --mode 5120x1440 --rate 60 --primary
+          ${pkgs.xorg.xrandr}/bin/xrandr --output DP-0 --mode 5120x1440 --rate 120 --primary --dpi 96
+          ${pkgs.xorg.xset}/bin/xset r rate 350 50
         '';
       };
     };
@@ -124,20 +139,20 @@
       defaultSession = "none+xmonad";
     };
 
-    # Compositor con config básica
+    # Picom optimizado
     picom = {
       enable = true;
       settings = {
-        backend = "xrender";  # Más seguro que glx inicialmente
+        backend = "glx";
+        glx-no-stencil = true;
+        glx-no-rebind-pixmap = true;
+        unredir-if-possible = true;
         vsync = true;
-        shadow = false;
-        inactive-opacity = 1.0;
-        active-opacity = 1.0;
-        frame-opacity = 1.0;
+        refresh-rate = 120;
       };
     };
 
-    # SSH
+    # SSH básico
     openssh = {
       enable = true;
       settings = {
@@ -145,20 +160,18 @@
         PasswordAuthentication = false;
       };
     };
-
-    # Reglas udev para los dispositivos USB
-    udev.extraRules = ''
-      # USB Hub
-      SUBSYSTEM=="usb", ATTR{idVendor}=="05e3", ATTR{idProduct}=="0626", GROUP="users", MODE="0666"
-      # RØDE NT-USB Mini
-      SUBSYSTEM=="usb", ATTR{idVendor}=="19f7", ATTR{idProduct}=="0015", GROUP="audio", MODE="0666"
-    '';
   };
 
-  # Docker
-  virtualisation.docker.enable = true;
+  # Docker básico
+  virtualisation.docker = {
+    enable = true;
+    autoPrune = {
+      enable = true;
+      dates = "weekly";
+    };
+  };
 
-  # Paquetes del sistema
+  # Paquetes básicos
   environment.systemPackages = with pkgs; [
     # Basics
     wget
@@ -171,13 +184,13 @@
     unzip
     zip
 
-    # NVIDIA Tools
+    # NVIDIA
     nvidia-vaapi-driver
     nvtop
     vulkan-tools
     glxinfo
 
-    # XMonad y relacionados
+    # XMonad
     xmonad-with-packages
     xmobar
     trayer
@@ -189,8 +202,7 @@
     xfce.xfce4-clipman-plugin
     flameshot
 
-    # Utilidades del sistema
-    alttab
+    # System
     xorg.setxkbmap
     xorg.xmodmap
     xorg.xinput
@@ -202,174 +214,27 @@
     htop
     neofetch
 
-    # Doom Emacs y dependencias
+    # Development
     emacs
-    cmake
-    gnumake
-    gnutls
-    libvterm
-
-    # Doom LSP y desarrollo
     nodePackages.intelephense
     tree-sitter
 
-    # Para clipboard
+    # Others
     xclip
-
-    # Para org-mode
-    graphviz
-    plantuml
-
-    # Browser
     firefox
     google-chrome
-
-    # SSH y red
-    openssh
-    networkmanager
-
-    # Audio
     alsa-utils
     pavucontrol
-
-    # Teams
-    teams-for-linux
   ];
 
-  # Home Manager Configuration
-  home-manager.users.passh = { pkgs, ... }: {
-    home.stateVersion = "24.05";
-
-    services.dunst = {
-      enable = true;
-      settings = {
-        global = {
-          # Configuración de la pantalla
-          monitor = 0;
-          follow = "mouse";
-          width = 300;
-          height = 300;
-          origin = "top-right";
-          offset = "10x50";
-          scale = 0;
-          notification_limit = 20;
-
-          # Progreso
-          progress_bar = true;
-          progress_bar_height = 10;
-          progress_bar_frame_width = 1;
-          progress_bar_min_width = 150;
-          progress_bar_max_width = 300;
-
-          # Configuración visual
-          transparency = 15;
-          separator_height = 2;
-          padding = 8;
-          horizontal_padding = 8;
-          text_icon_padding = 0;
-          frame_width = 2;
-          gap_size = 5;
-          separator_color = "frame";
-          sort = true;
-          idle_threshold = 120;
-
-          # Texto
-          font = "JetBrains Mono 10";
-          line_height = 0;
-          markup = "full";
-          format = "<b>%s</b>\\n%b";
-          alignment = "left";
-          vertical_alignment = "center";
-          show_age_threshold = 60;
-          word_wrap = true;
-          ellipsize = "middle";
-          ignore_newline = false;
-          stack_duplicates = true;
-          hide_duplicate_count = false;
-          show_indicators = true;
-
-          # Iconos
-          enable_recursive_icon_lookup = true;
-          icon_position = "left";
-          min_icon_size = 32;
-          max_icon_size = 128;
-          icon_path = "/run/current-system/sw/share/icons/gnome/16x16/status/:/run/current-system/sw/share/icons/gnome/16x16/devices/:/run/current-system/sw/share/icons/gnome/16x16/apps/";
-
-          # Historia
-          sticky_history = true;
-          history_length = 20;
-
-          # Acciones
-          mouse_left_click = "close_current";
-          mouse_middle_click = "do_action, close_current";
-          mouse_right_click = "close_all";
-        };
-
-        # Urgencia Baja
-        urgency_low = {
-          background = "#222222";
-          foreground = "#888888";
-          frame_color = "#888888";
-          timeout = 10;
-        };
-
-        # Urgencia Normal
-        urgency_normal = {
-          background = "#285577";
-          foreground = "#ffffff";
-          frame_color = "#4C7899";
-          timeout = 10;
-        };
-
-        # Urgencia Crítica
-        urgency_critical = {
-          background = "#900000";
-          foreground = "#ffffff";
-          frame_color = "#ff0000";
-          timeout = 0;
-        };
-      };
-    };
-  };
-
-  # Fonts
-  fonts.packages = with pkgs; [
-    emacs-all-the-icons-fonts
-    hack-font
-    monoid
-    fira-code
-    fira-code-symbols
-    jetbrains-mono
-    noto-fonts
-    noto-fonts-cjk
-    noto-fonts-emoji
-    (nerdfonts.override { fonts = [ "FiraCode" "JetBrainsMono" ]; })
-  ];
-
-  # Security
+  # Security básica
   security = {
     rtkit.enable = true;
     polkit.enable = true;
     sudo.wheelNeedsPassword = true;
-    pam.loginLimits = [{
-      domain = "*";
-      type = "soft";
-      item = "nofile";
-      value = "524288";
-    }];
   };
 
-  # Programs
-  programs = {
-    gnupg.agent = {
-      enable = true;
-      enableSSHSupport = true;
-    };
-
-    bash.enableCompletion = true;
-  };
-
-  # Nix settings
+  # Nix settings básicos
   nix = {
     settings = {
       auto-optimise-store = true;
